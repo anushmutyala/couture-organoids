@@ -1,0 +1,5 @@
+filename,heart_rate,pr_interval,qt_interval,qtc_interval,hrv_rmssd,num_beats,error
+afib_ecg.csv,99.4,175.6,379.5,488.4,411.6,16,
+normal_ecg.csv,122.4,160.8,385.3,550.3,274.2,18,
+simple_ecg.csv,80.0,164.2,304.0,351.0,3.1,13,
+tachycardia_ecg.csv,120.0,155.6,370.5,524.0,3.4,19,
