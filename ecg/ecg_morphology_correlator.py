@@ -619,6 +619,51 @@ class ECGMorphologyCorrelator:
                                alpha=0.4, color='purple', 
                                label='Deviation Area', zorder=1)
             
+            # Detect and annotate intervals for the first heartbeat
+            intervals1 = self.detect_ecg_intervals(hb1.signal, self.sampling_rate)
+            
+            # Add interval annotations with vertical bars
+            colors = {'PR': 'green', 'QRS': 'orange', 'QT': 'red'}
+            
+            # PR interval (P to R)
+            p_time_ms = intervals1['p_time'] * 1000
+            r_time_ms = intervals1['r_time'] * 1000
+            axes[1].axvline(x=p_time_ms, color=colors['PR'], linestyle='--', 
+                           linewidth=2, alpha=0.8, label='P-wave')
+            axes[1].axvline(x=r_time_ms, color=colors['PR'], linestyle='--', 
+                           linewidth=2, alpha=0.8, label='R-peak')
+            axes[1].annotate(f"PR: {intervals1['pr_interval']:.0f}ms", 
+                           xy=((p_time_ms + r_time_ms)/2, axes[1].get_ylim()[1] * 0.9),
+                           xytext=((p_time_ms + r_time_ms)/2, axes[1].get_ylim()[1] * 0.95),
+                           ha='center', fontsize=10, fontweight='bold',
+                           bbox=dict(boxstyle='round,pad=0.3', facecolor=colors['PR'], alpha=0.7),
+                           arrowprops=dict(arrowstyle='->', color=colors['PR']))
+            
+            # QRS duration (Q to S)
+            q_time_ms = intervals1['q_time'] * 1000
+            s_time_ms = intervals1['s_time'] * 1000
+            axes[1].axvline(x=q_time_ms, color=colors['QRS'], linestyle='--', 
+                           linewidth=2, alpha=0.8, label='Q-wave')
+            axes[1].axvline(x=s_time_ms, color=colors['QRS'], linestyle='--', 
+                           linewidth=2, alpha=0.8, label='S-wave')
+            axes[1].annotate(f"QRS: {intervals1['qrs_duration']:.0f}ms", 
+                           xy=((q_time_ms + s_time_ms)/2, axes[1].get_ylim()[0] * 0.9),
+                           xytext=((q_time_ms + s_time_ms)/2, axes[1].get_ylim()[0] * 0.95),
+                           ha='center', fontsize=10, fontweight='bold',
+                           bbox=dict(boxstyle='round,pad=0.3', facecolor=colors['QRS'], alpha=0.7),
+                           arrowprops=dict(arrowstyle='->', color=colors['QRS']))
+            
+            # QT interval (Q to T)
+            t_time_ms = intervals1['t_time'] * 1000
+            axes[1].axvline(x=t_time_ms, color=colors['QT'], linestyle='--', 
+                           linewidth=2, alpha=0.8, label='T-wave')
+            axes[1].annotate(f"QT: {intervals1['qt_interval']:.0f}ms\nQTc: {intervals1['qtc']:.0f}ms", 
+                           xy=((q_time_ms + t_time_ms)/2, axes[1].get_ylim()[1] * 0.7),
+                           xytext=((q_time_ms + t_time_ms)/2, axes[1].get_ylim()[1] * 0.8),
+                           ha='center', fontsize=10, fontweight='bold',
+                           bbox=dict(boxstyle='round,pad=0.3', facecolor=colors['QT'], alpha=0.7),
+                           arrowprops=dict(arrowstyle='->', color=colors['QT']))
+            
             # Calculate and display key metrics
             deviation_area = np.trapz(np.abs(hb1.signal - hb2.signal), time_axis)
             correlation = np.corrcoef(hb1.signal, hb2.signal)[0, 1]
@@ -636,7 +681,8 @@ class ECGMorphologyCorrelator:
                                 facecolor='white', alpha=0.9, 
                                 edgecolor='black'))
             
-            axes[1].set_title('Individual Heartbeat Comparison\n(Deviation Area = Purple Shaded Region)', 
+            axes[1].set_title('Individual Heartbeat Comparison\n(Deviation Area = Purple Shaded Region)\n'
+                            '(Intervals: PR=Green, QRS=Orange, QT=Red)', 
                             fontweight='bold')
             axes[1].set_xlabel('Time (ms)')
             axes[1].set_ylabel('Amplitude (mV)')
@@ -665,6 +711,14 @@ class ECGMorphologyCorrelator:
             print(f"  Correlation: {correlation:.3f}")
             print(f"  Max Deviation: {max_deviation:.3f} mV")
             
+            # Add interval measurements
+            intervals1 = self.detect_ecg_intervals(hb1.signal, self.sampling_rate)
+            print(f"\nECG Intervals (Recording 1):")
+            print(f"  PR Interval: {intervals1['pr_interval']:.0f} ms")
+            print(f"  QRS Duration: {intervals1['qrs_duration']:.0f} ms")
+            print(f"  QT Interval: {intervals1['qt_interval']:.0f} ms")
+            print(f"  QTc: {intervals1['qtc']:.0f} ms")
+            
             # Calculate average deviation across all heartbeats
             all_deviations = []
             all_correlations = []
@@ -690,6 +744,69 @@ class ECGMorphologyCorrelator:
             print(f"  Std Deviation Area: {np.std(all_deviations):.2f} mV·ms")
             print(f"  Min Correlation: {np.min(all_correlations):.3f}")
             print(f"  Max Correlation: {np.max(all_correlations):.3f}")
+
+    def detect_ecg_intervals(self, heartbeat_signal: np.ndarray, 
+                           sampling_rate: float = 500.0) -> dict:
+        """
+        Detect PR, QRS, and QT intervals from a single heartbeat
+        
+        Args:
+            heartbeat_signal (np.ndarray): Single heartbeat signal
+            sampling_rate (float): Sampling rate in Hz
+            
+        Returns:
+            dict: Dictionary containing interval measurements and indices
+        """
+        dt = 1.0 / sampling_rate
+        
+        # Find R-peak (maximum point in the signal)
+        r_peak_idx = np.argmax(heartbeat_signal)
+        r_peak_time = r_peak_idx * dt
+        
+        # Find Q-wave (minimum before R-peak)
+        search_start = max(0, r_peak_idx - int(0.1 / dt))  # Search 100ms before R
+        search_end = r_peak_idx
+        q_idx = search_start + np.argmin(heartbeat_signal[search_start:search_end])
+        q_time = q_idx * dt
+        
+        # Find S-wave (minimum after R-peak)
+        search_start = r_peak_idx
+        search_end = min(len(heartbeat_signal), r_peak_idx + int(0.1 / dt))  # Search 100ms after R
+        s_idx = search_start + np.argmin(heartbeat_signal[search_start:search_end])
+        s_time = s_idx * dt
+        
+        # Find P-wave (maximum before Q-wave)
+        search_start = max(0, q_idx - int(0.2 / dt))  # Search 200ms before Q
+        search_end = q_idx
+        p_idx = search_start + np.argmax(heartbeat_signal[search_start:search_end])
+        p_time = p_idx * dt
+        
+        # Find T-wave (maximum after S-wave)
+        search_start = s_idx
+        search_end = min(len(heartbeat_signal), s_idx + int(0.3 / dt))  # Search 300ms after S
+        t_idx = search_start + np.argmax(heartbeat_signal[search_start:search_end])
+        t_time = t_idx * dt
+        
+        # Calculate intervals
+        pr_interval = (r_peak_time - p_time) * 1000  # Convert to ms
+        qrs_duration = (s_time - q_time) * 1000  # Convert to ms
+        qt_interval = (t_time - q_time) * 1000  # Convert to ms
+        
+        # Calculate QTc (Bazett's formula)
+        rr_interval = 1.0  # Assume 1 second for demo (60 bpm)
+        qtc = qt_interval / np.sqrt(rr_interval)
+        
+        return {
+            'p_idx': p_idx, 'p_time': p_time,
+            'q_idx': q_idx, 'q_time': q_time,
+            'r_idx': r_peak_idx, 'r_time': r_peak_time,
+            's_idx': s_idx, 's_time': s_time,
+            't_idx': t_idx, 't_time': t_time,
+            'pr_interval': pr_interval,
+            'qrs_duration': qrs_duration,
+            'qt_interval': qt_interval,
+            'qtc': qtc
+        }
 
 def main():
     """
